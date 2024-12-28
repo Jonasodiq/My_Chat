@@ -1,72 +1,123 @@
 package com.example.mychat
 
-// Importerar nödvändiga Android- och Firebase-bibliotek
-import android.app.Activity
+import android.graphics.drawable.BitmapDrawable
 import android.os.Bundle
-import androidx.activity.enableEdgeToEdge
+import android.util.Log
+import android.view.Menu
+import android.view.MenuItem
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
+import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.mychat.databinding.ActivityMainBinding
-import com.google.firebase.database.DataSnapshot
-import com.google.firebase.database.DatabaseError
-import com.google.firebase.database.DatabaseReference
-import com.google.firebase.database.FirebaseDatabase
-import com.google.firebase.database.ValueEventListener
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.database.*
+import com.squareup.picasso.Picasso
 
-// Huvudaktivitet för appen
 class MainActivity : AppCompatActivity() {
-    // Deklarerar en binding-variabel för att koppla till layouten
-    lateinit var binding: ActivityMainBinding
 
-    // Körs när aktiviteten skapas
+    private lateinit var binding: ActivityMainBinding
+    private lateinit var auth: FirebaseAuth
+    private lateinit var myRef: DatabaseReference // Firebase reference
+    private val messageList = mutableListOf<String>() // List for storing messages
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Initialiserar binding med layoutinflation
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        enableEdgeToEdge() // Aktiverar stöd för kant-till-kant UI
-        setContentView(binding.root) // Sätter layoutens rotvy
+        // Initialize Firebase Auth
+        auth = FirebaseAuth.getInstance()
 
-        // Hanterar systemfält (status- och navigeringsfält) för att justera layoutens marginaler
-        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
-            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
-            insets // Returnerar modifierade insets
-        }
-
-        // Initialiserar Firebase-databasen
+        // Initialize Firebase Realtime Database
         val database = FirebaseDatabase.getInstance()
-        val myRef = database.getReference("message") // Referens till "message"-noden
+        myRef = database.getReference("messages") // Reference to "messages" node in Firebase
 
-        // Lyssnar på klickhändelser på skicka-knappen
+        // Bind layout using ViewBinding
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        // Set Toolbar as ActionBar
+        setSupportActionBar(binding.toolbar)
+
+        // Add avatar image in Toolbar
+        setUpActionBar()
+
+        // Set up RecyclerView
+        setupRecyclerView()
+
+        // Add ValueEventListener to fetch messages from Firebase
+        addMessagesListener()
+
+        // Handle send button click
         binding.btnSend.setOnClickListener {
             val message = binding.edMessage.text.toString()
-            if (message.isNotBlank()) { // Kontroll för att förhindra tomma meddelanden
-                myRef.setValue(message) // Skickar meddelandet till Firebase
-                binding.edMessage.text.clear() // Rensar textfältet efter skickat meddelande
+            if (message.isNotBlank()) {
+                // Push the message to Firebase
+                myRef.push().setValue(message)
+                binding.edMessage.text.clear() // Clear input after sending
+                Log.d("MainActivity", "Message sent: $message")
+            } else {
+                Log.d("MainActivity", "Message is empty")
             }
         }
-
-        // Anropar funktion för att lyssna på förändringar i databasen
-        onChangeListener(myRef)
     }
 
-    // Lyssnar på förändringar i databasen
-    private fun onChangeListener(dRef: DatabaseReference) {
-        dRef.addValueEventListener(object : ValueEventListener {
-            override fun onDataChange(snapshot: DataSnapshot) {
-                // Uppdaterar UI när data i Firebase ändras
-                binding.apply {
-                    rcView.append("\n") // Lägger till en ny rad
-                    rcView.append("Jonas: ${snapshot.value.toString()}") // Visar meddelandet
+    override fun onCreateOptionsMenu(menu: Menu?): Boolean {
+        menuInflater.inflate(R.menu.main_menu, menu)
+        return super.onCreateOptionsMenu(menu)
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        if (item.itemId == R.id.sign_out){
+            auth.signOut()
+            finish()
+        }
+        return super.onOptionsItemSelected(item)
+    }
+
+    private fun setUpActionBar() {
+        val ab = supportActionBar
+        val photoUrl = auth.currentUser?.photoUrl
+
+        if (photoUrl != null) {
+            Thread {
+                try {
+                    val bMap = Picasso.get().load(photoUrl).get()
+                    val dIcon = BitmapDrawable(resources, bMap)
+
+                    runOnUiThread {
+                        ab?.setDisplayHomeAsUpEnabled(true)
+                        ab?.setHomeAsUpIndicator(dIcon)
+                        ab?.title = auth.currentUser?.displayName
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    Log.e("MainActivity", "Error loading profile image: ${e.message}")
                 }
+            }.start()
+        } else {
+            Log.w("MainActivity", "No profile image found.")
+        }
+    }
+
+    private fun setupRecyclerView() {
+        binding.rcView.layoutManager = LinearLayoutManager(this)
+        binding.rcView.adapter = MessageAdapter(messageList) // Set up the adapter
+    }
+
+    private fun addMessagesListener() {
+        myRef.addValueEventListener(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                // Fetch all messages and update UI
+                messageList.clear() // Clear the existing messages
+                for (data in snapshot.children) {
+                    val message = data.getValue(String::class.java)
+                    message?.let {
+                        messageList.add(it) // Add message to the list
+                    }
+                }
+                binding.rcView.adapter?.notifyDataSetChanged() // Notify adapter to refresh the list
             }
 
             override fun onCancelled(error: DatabaseError) {
-                // Hanterar fel vid databasåtkomst
-                // Här kan du lägga till loggning eller visa ett felmeddelande
-                // Exempel: Toast.makeText(this@MainActivity, "Error: ${error.message}", Toast.LENGTH_SHORT).show()
+                Log.w("MainActivity", "Failed to read value.", error.toException())
             }
         })
     }
