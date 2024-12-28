@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Appens huvudtema -->
+
+
+    <!-- Stil för Toolbar -->
+    <style name="ToolbarStyle" parent="Widget.AppCompat.Toolbar">
+        <item name="android:background">?attr/colorPrimary</item>
+        <item name="android:titleTextColor">@android:color/white</item>
+        <item name="android:elevation">4dp</item>
+    </style>
+</resources>
